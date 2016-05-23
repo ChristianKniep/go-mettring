@@ -2,6 +2,8 @@ package mettring
 
 import (
 	"time"
+	//"reflect"
+	//"sort"
 
 	"github.com/ChristianKniep/QNIBCollect/src/fullerite/metric"
 )
@@ -17,6 +19,7 @@ type Ring struct {
 	retention int
 	head time.Time
 	tail time.Time
+	count int
 	buffer map[int64][]metric.Metric
 }
 
@@ -26,7 +29,8 @@ func New(sec int) Ring {
 		retention: sec,
 		head: time.Now(),
 		tail: time.Now(),
-		buffer: make(map[int64][]metric.Metric),
+		count: 0,
+		buffer: make(map[int64][]metric.Metric,1),
 	}
 }
 
@@ -42,17 +46,33 @@ func (r *Ring) Enqueue(m metric.Metric) {
 	}
 	_, ok := r.buffer[ts]
 	if !ok {
-		r.buffer[ts] = make([]metric.Metric, 0)
+		r.buffer[ts] = []metric.Metric{}
 	}
 	r.buffer[ts] = append(r.buffer[ts], m)
+	r.count++
 }
 
 // Peek returns the slice of a given timestamp
 func (r *Ring) Peek(ts int64) ([]metric.Metric, bool) {
 	slice, ok := r.buffer[ts]
 	if !ok || len(slice) == 0 {
-		ret := make([]metric.Metric, 1)
+		ret := []metric.Metric{}
 		return ret, false
 	}
 	return slice, true
+}
+
+// Values returns the buffer
+func (r *Ring) Values() ([]metric.Metric, bool) {
+	if len(r.buffer) == 0 {
+		ret := []metric.Metric{}
+		return ret, false
+	}
+	ret := []metric.Metric{}
+	for _, ms := range r.buffer {
+		for _, m := range ms {
+			ret = append(ret, m)
+		}
+	}
+	return ret, true
 }
