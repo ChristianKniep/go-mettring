@@ -113,3 +113,26 @@ func (r *Ring) TidyUp() (int, bool) {
 	}
 	return kicked, true
 }
+
+// Filter returns the buffer with a filter applied
+func (r *Ring) Filter(f metric.Filter) ([]metric.Metric, bool) {
+
+	if len(r.buffer) == 0 {
+		ret := []metric.Metric{}
+		return ret, false
+	}
+	var keys []string
+	for k := range r.buffer {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	ret := []metric.Metric{}
+	for _, key := range keys {
+		for _, m := range r.buffer[key] {
+			if ! m.IsFiltered(f) {
+				ret = append(ret, m)
+			}
+		}
+	}
+	return ret, true
+}
