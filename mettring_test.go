@@ -66,3 +66,27 @@ func TestMettringTidyUp(t *testing.T) {
 	assert.True(t, ok, "Values() returned empty list")
 	assert.Equal(t, exp[expKick:], slice)
 }
+
+func TestMettringFilter(t *testing.T) {
+	mr := New(200)
+	_, ok := mr.Values()
+	exp := []metric.Metric{}
+	var m metric.Metric
+	assert.False(t, ok, "Values() returned non-empty list")
+	for i := 0; i < 5; i++ {
+	  m = metric.New(fmt.Sprintf("m%d", i))
+		exp = append(exp, m)
+		mr.Enqueue(m)
+		time.Sleep(10 * time.Millisecond)
+	}
+	d := map[string]string{}
+	f := metric.NewFilter("m.*", "gauge", d)
+	slice, ok := mr.Filter(f)
+	assert.Equal(t, []metric.Metric{}, slice)
+	f = metric.NewFilter("m.*", "FAIL_TYPE", d)
+	slice, ok = mr.Filter(f)
+	assert.Equal(t, exp, slice)
+	f = metric.NewFilter("m0", "gauge", d)
+	slice, ok = mr.Filter(f)
+	assert.Equal(t, exp[1:], slice)
+}
