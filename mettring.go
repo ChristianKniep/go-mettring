@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/ChristianKniep/QNIBCollect/src/fullerite/metric"
+	"fullerite/metric"
 )
 
 /* This library provides a RingBuffer based on the attribute .Time

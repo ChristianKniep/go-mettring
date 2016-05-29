@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ChristianKniep/QNIBCollect/src/fullerite/metric"
+	"fullerite/metric"
 	"github.com/stretchr/testify/assert"
 )
 
