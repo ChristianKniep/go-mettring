@@ -88,3 +88,28 @@ func TestMettringFilter(t *testing.T) {
 	slice, ok = mr.Filter(f)
 	assert.Equal(t, exp[1:], slice)
 }
+
+func TestMettringAggregate(t *testing.T) {
+	mr := New(200)
+	_, ok := mr.Values()
+	exp := []metric.Metric{}
+	var m metric.Metric
+	assert.False(t, ok, "Values() returned non-empty list")
+	for i := 0; i < 5; i++ {
+		for j := 0; j < 5 ; j++ {
+			m = metric.New(fmt.Sprintf("m%d", i))
+			m.Value = float64(i*10 + j)
+			exp = append(exp, m)
+			mr.Enqueue(m)
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	agg, ok := mr.GetAggregate()
+	assert.False(t, ok, "GetAggregate() returned non-empty list")
+	assert.Equal(t, 0, len(agg), "Length of aggregate should be zero")
+	ok = mr.AggregateBuffer()
+	assert.True(t, ok, "AggregateBuffer failed")
+	agg, ok = mr.GetAggregate()
+	assert.True(t, ok, "GetAggregate() returned empty list")
+	assert.Equal(t, 5, len(agg), "Length of aggregate should be zero")
+}
