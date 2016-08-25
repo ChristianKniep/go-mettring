@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/ChristianKniep/QNIBCollect/src/fullerite/metric"
+	"github.com/qnib/qcollect/metric"
 )
 
 /* This library provides a RingBuffer based on the attribute .Time
@@ -22,20 +22,20 @@ func Itoa64(i int64) string {
 // Ring provides the main struct
 type Ring struct {
 	retention int
-	head time.Time
-	tail time.Time
-	count int
-	buffer map[string][]metric.Metric
+	head      time.Time
+	tail      time.Time
+	count     int
+	buffer    map[string][]metric.Metric
 }
 
 // New returns a new ring
 func New(ms int) Ring {
 	return Ring{
 		retention: ms,
-		head: time.Now(),
-		tail: time.Now(),
-		count: 0,
-		buffer: make(map[string][]metric.Metric,1),
+		head:      time.Now(),
+		tail:      time.Now(),
+		count:     0,
+		buffer:    make(map[string][]metric.Metric, 1),
 	}
 }
 
@@ -95,7 +95,7 @@ func (r *Ring) TidyUp() (int, bool) {
 	var kicked int
 	var keys []string
 	for k := range r.buffer {
-    keys = append(keys, k)
+		keys = append(keys, k)
 	}
 	sort.Strings(keys)
 	old := time.Now().UnixNano() - int64(r.retention*1000000)
@@ -129,7 +129,7 @@ func (r *Ring) Filter(f metric.Filter) ([]metric.Metric, bool) {
 	ret := []metric.Metric{}
 	for _, key := range keys {
 		for _, m := range r.buffer[key] {
-			if ! m.IsFiltered(f) {
+			if !m.IsFiltered(f) {
 				ret = append(ret, m)
 			}
 		}
