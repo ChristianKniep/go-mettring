@@ -25,7 +25,8 @@ type Ring struct {
 	head      time.Time
 	tail      time.Time
 	count     int
-	buffer    map[string][]metric.Metric
+	buffer    map[string]map[string][]metric.Metric
+	aggregate map[string]metric.Metric
 }
 
 // New returns a new ring
@@ -35,7 +36,8 @@ func New(ms int) Ring {
 		head:      time.Now(),
 		tail:      time.Now(),
 		count:     0,
-		buffer:    make(map[string][]metric.Metric, 1),
+		buffer:    make(map[string]map[string][]metric.Metric),
+		aggregate: make(map[string]metric.Metric),
 	}
 }
 
@@ -52,17 +54,25 @@ func (r *Ring) Enqueue(m metric.Metric) {
 	sts := Itoa64(ts)
 	_, ok := r.buffer[sts]
 	if !ok {
-		r.buffer[sts] = []metric.Metric{}
+		r.buffer[sts] = make(map[string][]metric.Metric)
 	}
-	r.buffer[sts] = append(r.buffer[sts], m)
+	id := m.GetFilterID()
+	_, ok = r.buffer[sts][id]
+	if !ok {
+		r.buffer[sts][id] = []metric.Metric{}
+	}
+	r.buffer[sts][id] = append(r.buffer[sts][id], m)
 	r.count++
 }
 
 // Peek returns the slice of a given timestamp
 func (r *Ring) Peek(ts int64) ([]metric.Metric, bool) {
 	sts := Itoa64(ts)
-	slice, ok := r.buffer[sts]
-	if !ok || len(slice) == 0 {
+	slice := []metric.Metric{}
+	for _, ms := range r.buffer[sts] {
+		slice = append(slice, ms...)
+	}
+	if len(slice) == 0 {
 		ret := []metric.Metric{}
 		return ret, false
 	}
@@ -83,8 +93,8 @@ func (r *Ring) Values() ([]metric.Metric, bool) {
 	sort.Strings(keys)
 	ret := []metric.Metric{}
 	for _, key := range keys {
-		for _, m := range r.buffer[key] {
-			ret = append(ret, m)
+		for _, ids := range r.buffer[key] {
+			ret = append(ret, ids...)
 		}
 	}
 	return ret, true
@@ -100,14 +110,16 @@ func (r *Ring) TidyUp() (int, bool) {
 	sort.Strings(keys)
 	old := time.Now().UnixNano() - int64(r.retention*1000000)
 	for _, k := range keys {
-		ms := r.buffer[k]
-		for i, m := range ms {
-			if old > m.GetTime().UnixNano() {
-				//fmt.Printf("Remove '%s' as old '%d' is more recent then '%d' (%dsec diff)\n", m.Name, old, m.GetTime().UnixNano(), (m.GetTime().UnixNano()-old)/1000000000)
-				kicked++
-				r.buffer[k] = append(ms[:i], ms[i+1:]...)
-			} else {
-				//fmt.Printf("Kept '%s' as old '%d' is older then '%d' (%d)\n", m.Name, old, m.GetTime().UnixNano(), m.GetTime().UnixNano()-old)
+		ids := r.buffer[k]
+		for id, ms := range ids {
+			for i, m := range ms {
+				if old > m.GetTime().UnixNano() {
+					//fmt.Printf("Remove '%s' as old '%d' is more recent then '%d' (%dsec diff)\n", m.Name, old, m.GetTime().UnixNano(), (m.GetTime().UnixNano()-old)/1000000000)
+					kicked++
+					r.buffer[k][id] = append(ms[:i], ms[i+1:]...)
+				} else {
+					//fmt.Printf("Kept '%s' as old '%d' is older then '%d' (%d)\n", m.Name, old, m.GetTime().UnixNano(), m.GetTime().UnixNano()-old)
+				}
 			}
 		}
 	}
@@ -128,9 +140,12 @@ func (r *Ring) Filter(f metric.Filter) ([]metric.Metric, bool) {
 	sort.Strings(keys)
 	ret := []metric.Metric{}
 	for _, key := range keys {
-		for _, m := range r.buffer[key] {
-			if !m.IsFiltered(f) {
-				ret = append(ret, m)
+		ids := r.buffer[key]
+		for _, ms := range ids {
+			for _, m := range ms {
+				if !m.IsFiltered(f) {
+					ret = append(ret, m)
+				}
 			}
 		}
 	}
@@ -151,11 +166,66 @@ func (r *Ring) Match(f metric.Filter) ([]metric.Metric, bool) {
 	sort.Strings(keys)
 	ret := []metric.Metric{}
 	for _, key := range keys {
-		for _, m := range r.buffer[key] {
-			if m.IsFiltered(f) {
-				ret = append(ret, m)
+		ids := r.buffer[key]
+		for _, ms := range ids {
+			for _, m := range ms {
+				if m.IsFiltered(f) {
+					ret = append(ret, m)
+				}
 			}
 		}
 	}
 	return ret, true
+}
+
+// GetAggregate returns the aggregated buffer
+func (r *Ring) GetAggregate() ([]metric.Metric, bool) {
+
+	if len(r.aggregate) == 0 {
+		ret := []metric.Metric{}
+		return ret, false
+	}
+	var ids []string
+	for i := range r.aggregate {
+		ids = append(ids, i)
+	}
+	ret := []metric.Metric{}
+	for _, i := range ids {
+			ret = append(ret, r.aggregate[i])
+	}
+	return ret, true
+}
+
+// AggregateBuffer iterates over the buffer and aggregates the list of IDs into a single metric
+func (r *Ring) AggregateBuffer() bool {
+	var keys []string
+	for k := range r.buffer {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	r.aggregate = make(map[string]metric.Metric)
+	cacheSlice := make(map[string][]metric.Metric)
+	var agg, cache float64
+	for _, key := range keys {
+		for id, ms := range r.buffer[key] {
+			_, ok := cacheSlice[id]
+			if !ok {
+				cacheSlice[id] = []metric.Metric{}
+			}
+			for _, m := range ms {
+				cacheSlice[id] = append(cacheSlice[id], m)
+			}
+		}
+	}
+	for id, ms := range cacheSlice {
+		var m metric.Metric
+		cache = 0.0
+		for _, m = range ms {
+			cache = cache + m.Value
+		}
+		agg = cache / float64(len(ms))
+		aggMetric := metric.NewExt(m.Name, m.MetricType, agg, m.Dimensions, m.GetTime(), m.Buffered)
+		r.aggregate[id] = aggMetric
+	}
+	return true
 }
